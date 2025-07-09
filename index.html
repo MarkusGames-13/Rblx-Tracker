@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Timer Webhook</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #36393f;
+            color: #dcddde;
+        }
+        .container {
+            background-color: #2f3136;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #ffffff;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #b9bbbe;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #202225;
+            background-color: #40444b;
+            color: #dcddde;
+        }
+        button {
+            background-color: #5865f2;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #4752c4;
+        }
+        .timer-display {
+            text-align: center;
+            font-size: 24px;
+            margin: 20px 0;
+            display: none;
+        }
+        .active-timer {
+            background-color: #40444b;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Discord Timer Webhook</h1>
+        
+        <div class="form-group">
+            <label for="webhookUrl">Discord Webhook URL:</label>
+            <input type="text" id="webhookUrl" placeholder="https://discord.com/api/webhooks/..." value="https://discord.com/api/webhooks/1392437015944888320/0xxvQ8x0RjXCkxtYiAzKPe7V0A1URNDVwAWZByQ-rXeacmtCWtZZf2EhuZ_hLGzVcQ6-">
+        </div>
+        
+        <div class="form-group">
+            <label for="username">Username:</label>
+            <input type="text" id="username" placeholder="Enter username">
+        </div>
+        
+        <div class="form-group">
+            <label for="reason">Reason:</label>
+            <textarea id="reason" rows="3" placeholder="Enter reason for the timer"></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="timerInput">Timer (e.g., 30s, 5m, 2h, 1d):</label>
+            <input type="text" id="timerInput" placeholder="Example: 30s for 30 seconds">
+        </div>
+        
+        <button id="startTimer">Start Timer</button>
+        
+        <div class="timer-display" id="timerDisplay">
+            Time remaining: <span id="timeRemaining">00:00:00</span>
+        </div>
+        
+        <div class="active-timer" id="activeTimerInfo">
+            <p>Tracking: <strong id="trackingUsername"></strong></p>
+            <p>Reason: <strong id="trackingReason"></strong></p>
+            <p>Ends at: <strong id="endTime"></strong></p>
+            <button id="cancelTimer">Cancel Timer</button>
+        </div>
+    </div>
+
+    <script>
+        let timerInterval;
+        let endTime;
+        
+        document.getElementById('startTimer').addEventListener('click', startTimer);
+        document.getElementById('cancelTimer').addEventListener('click', cancelTimer);
+        
+        function startTimer() {
+            const webhookUrl = document.getElementById('webhookUrl').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const reason = document.getElementById('reason').value.trim();
+            const timerInput = document.getElementById('timerInput').value.trim();
+            
+            // Validate inputs
+            if (!webhookUrl) {
+                alert('Please enter a Discord webhook URL');
+                return;
+            }
+            
+            if (!username) {
+                alert('Please enter a username');
+                return;
+            }
+            
+            if (!timerInput) {
+                alert('Please enter a timer value');
+                return;
+            }
+            
+            // Parse timer input
+            const timer = parseTimerInput(timerInput);
+            if (!timer) {
+                alert('Invalid timer format. Use format like 30s, 5m, 2h, or 1d');
+                return;
+            }
+            
+            // Calculate end time
+            const now = new Date();
+            endTime = new Date(now.getTime() + timer.duration * 1000);
+            
+            // Show timer display
+            document.getElementById('timerDisplay').style.display = 'block';
+            document.getElementById('activeTimerInfo').style.display = 'block';
+            document.getElementById('trackingUsername').textContent = username;
+            document.getElementById('trackingReason').textContent = reason;
+            document.getElementById('endTime').textContent = endTime.toLocaleString();
+            
+            // Start countdown
+            updateTimerDisplay();
+            timerInterval = setInterval(updateTimerDisplay, 1000);
+            
+            // Store timer data in localStorage
+            const timerData = {
+                webhookUrl,
+                username,
+                reason,
+                endTime: endTime.getTime()
+            };
+            localStorage.setItem('discordTimer', JSON.stringify(timerData));
+            
+            // Set timeout for when timer ends
+            setTimeout(() => {
+                sendWebhook(webhookUrl, username, reason);
+                clearInterval(timerInterval);
+                document.getElementById('timerDisplay').style.display = 'none';
+                document.getElementById('activeTimerInfo').style.display = 'none';
+                localStorage.removeItem('discordTimer');
+            }, timer.duration * 1000);
+        }
+        
+        function parseTimerInput(input) {
+            const regex = /^(\d+)([smhd])$/;
+            const match = input.match(regex);
+            
+            if (!match) return null;
+            
+            const value = parseInt(match[1]);
+            const unit = match[2];
+            
+            let duration;
+            switch (unit) {
+                case 's': duration = value; break;
+                case 'm': duration = value * 60; break;
+                case 'h': duration = value * 60 * 60; break;
+                case 'd': duration = value * 60 * 60 * 24; break;
+                default: return null;
+            }
+            
+            return { value, unit, duration };
+        }
+        
+        function updateTimerDisplay() {
+            const now = new Date();
+            const remaining = Math.max(0, (endTime - now) / 1000);
+            
+            if (remaining <= 0) {
+                clearInterval(timerInterval);
+                document.getElementById('timeRemaining').textContent = '00:00:00';
+                return;
+            }
+            
+            const hours = Math.floor(remaining / 3600);
+            const minutes = Math.floor((remaining % 3600) / 60);
+            const seconds = Math.floor(remaining % 60);
+            
+            document.getElementById('timeRemaining').textContent = 
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        function cancelTimer() {
+            clearInterval(timerInterval);
+            document.getElementById('timerDisplay').style.display = 'none';
+            document.getElementById('activeTimerInfo').style.display = 'none';
+            localStorage.removeItem('discordTimer');
+        }
+        
+        async function sendWebhook(webhookUrl, username, reason) {
+            const payload = {
+                content: `Timer completed for **${username}**\nReason: ${reason}`,
+                username: "Ban Tracker",
+                avatar_url: "https://thumbs.dreamstime.com/b/sneaky-emoticon-vector-design-66765543.jpg",
+                embeds: [
+                    {
+                        title: "Timer Completed",
+                        description: `${username} has been Unbanned.`,
+                        color: 0x5865f2,
+                        fields: [
+                            {
+                                name: "User",
+                                value: username,
+                                inline: true
+                            },
+                            {
+                                name: "Reason",
+                                value: reason,
+                                inline: true
+                            }
+                        ],
+                        timestamp: new Date().toISOString()
+                    }
+                ]
+            };
+            
+            try {
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    console.error('Failed to send webhook:', response.status);
+                }
+            } catch (error) {
+                console.error('Error sending webhook:', error);
+            }
+        }
+        
+        // Check for active timer on page load
+        window.addEventListener('load', () => {
+            const savedTimer = localStorage.getItem('discordTimer');
+            if (savedTimer) {
+                const timerData = JSON.parse(savedTimer);
+                const now = new Date();
+                endTime = new Date(timerData.endTime);
+                
+                if (endTime > now) {
+                    // Timer is still active
+                    document.getElementById('webhookUrl').value = timerData.webhookUrl;
+                    document.getElementById('username').value = timerData.username;
+                    document.getElementById('reason').value = timerData.reason;
+                    
+                    document.getElementById('timerDisplay').style.display = 'block';
+                    document.getElementById('activeTimerInfo').style.display = 'block';
+                    document.getElementById('trackingUsername').textContent = timerData.username;
+                    document.getElementById('trackingReason').textContent = timerData.reason;
+                    document.getElementById('endTime').textContent = endTime.toLocaleString();
+                    
+                    const remaining = (endTime - now) / 1000;
+                    updateTimerDisplay();
+                    timerInterval = setInterval(updateTimerDisplay, 1000);
+                    
+                    // Set timeout for when timer ends
+                    setTimeout(() => {
+                        sendWebhook(timerData.webhookUrl, timerData.username, timerData.reason);
+                        clearInterval(timerInterval);
+                        document.getElementById('timerDisplay').style.display = 'none';
+                        document.getElementById('activeTimerInfo').style.display = 'none';
+                        localStorage.removeItem('discordTimer');
+                    }, remaining * 1000);
+                } else {
+                    // Timer has expired
+                    localStorage.removeItem('discordTimer');
+                }
+            }
+        });
+    </script>
+</body>
+</html>
